@@ -38,11 +38,8 @@ class MyBot(BaseBot):
 
     async def on_start(self, session_metadata: SessionMetadata) -> None:
         asyncio.create_task(self.announce_loop())
-    async def on_chat(self, user: User, message: str) -> None:
-        message = message.lower().strip()
 
-        # --- SECRET COORDINATE FINDER COMMAND ---
-       async def on_chat(self, user: User, message: str) -> None:
+    async def on_chat(self, user: User, message: str) -> None:
         message = message.lower().strip()
 
         # --- 1. COORDINATE TRACKER COMMAND ---
@@ -72,41 +69,16 @@ class MyBot(BaseBot):
 
             if is_mod or is_crew:
                 await self.highrise.teleport_user(user.id, self.mod_area)
-                await self.highrise.chat(f" Teleported {user.username} to the Moderator Lounge!")
+                await self.highrise.chat(f"Teleported {user.username} to the Moderator Lounge!")
             else:
-                await self.highrise.chat(f" Sorry {user.username}, this command is strictly for Crew & Mods.")
+                await self.highrise.chat(f"Sorry {user.username}, this command is strictly for Crew & Mods.")
 
         # --- 3. VIP LOUNGE COMMAND ---
         elif message == "!vip":
             if user.id in self.vip_users:
                 await self.highrise.teleport_user(user.id, self.vip_area)
             else:
-                await self.highrise.chat(f" You haven't unlocked VIP yet, {user.username}! Tip 500g to unlock.")
-
-
-        if message == "!mod":
-            privilege_response = await self.highrise.get_room_privilege(user.id)
-            is_mod = privilege_response.content.moderator or privilege_response.content.owner
-            
-            is_crew = False
-            try:
-                user_info = await self.highrise.get_user_info(user.id)
-                if getattr(user_info.content, 'crew_id', None) == self.crew_id:
-                    is_crew = True
-            except Exception:
-                pass
-
-            if is_mod or is_crew:
-                await self.highrise.teleport_user(user.id, self.mod_area)
-                await self.highrise.chat(f" Teleported {user.username} to the Moderator Lounge!")
-            else:
-                await self.highrise.chat(f" Sorry {user.username}, this command is strictly for Crew & Mods.")
-
-        elif message == "!vip":
-            if user.id in self.vip_users:
-                await self.highrise.teleport_user(user.id, self.vip_area)
-            else:
-                await self.highrise.chat(f" You haven't unlocked VIP yet, {user.username}! Tip 500g to unlock.")
+                await self.highrise.chat(f"You haven't unlocked VIP yet, {user.username}! Tip 500g to unlock.")
 
     async def on_tip(self, sender: User, receiver: User, tip: CurrencyItem) -> None:
         if receiver.id == self.id and tip.type == "gold":
@@ -118,8 +90,8 @@ class MyBot(BaseBot):
 if __name__ == "__main__":
     from highrise.__main__ import main, BotDefinition
     
-    # Force inject credentials directly into system environment variables
-    os.environ["api_token"] = token = "2c001cb06c4370e639be2d7a24cf4e7a0a860ef708d45d11cde0960653d0e8a6"
+    # Inject credentials directly into system environment variables
+    os.environ["api_token"] = "2c001cb06c4370e639be2d7a24cf4e7a0a860ef708d45d11cde0960653d0e8a6"
     os.environ["room_id"] = "64a094a74134ad0fd77b8734"
     
     loop = asyncio.get_event_loop()
@@ -130,4 +102,3 @@ if __name__ == "__main__":
         
     definitions = [BotDefinition(MyBot(), room, token)]
     loop.run_until_complete(main(definitions))
-
