@@ -41,69 +41,55 @@ class MyBot(BaseBot):
         asyncio.create_task(self.announce_loop())
 
     async def on_chat(self, user: User, message: str) -> None:
-        message = message.lower().strip()
-        current_username = user.username.lower()
+        try:
+            # Safely grab the username no matter how the object is passed
+            username_str = getattr(user, 'username', '').lower().strip()
+            msg_str = message.lower().strip()
 
-        # --- 1. COORDINATE TRACKER COMMAND ---
-        if message == "!coords":
-            try:
-                room_users = await self.highrise.get_room_users()
-                for item in room_users.content:
-                    room_user = item
-                    position = item
-                    if room_user.id == user.id:
-                        await self.highrise.send_whisper(user.id, f"📍 Your Coords: x={position.x}, y={position.y}, z={position.z}")
-                        return
-            except Exception as e:
-                print(f"Error finding coords: {e}")
-                return
-
-        # --- 2. EXCLUSIVE DJ BOOTH COMMAND ---
-        elif message == "!dj":
-            try:
-                # INSTANT BYPASS PATH: If it is you or the DJ, teleport immediately and stop
-                if "nxmb_" in current_username or "sexytegann" in current_username or "bondtegan" in current_username:
+            # --- 1. EXCLUSIVE DJ BOOTH COMMAND ---
+            if msg_str == "!dj":
+                if "nxmb_" in username_str or "sexytegann" in username_str or "bondtegan" in username_str:
                     await self.highrise.teleport_user(user.id, self.dj_area)
                     await self.highrise.chat(f"🎧 Welcome to the stage, DJ {user.username}!")
                     return
                 else:
                     await self.highrise.chat(f"Sorry {user.username}, the DJ Booth is reserved exclusively for @nxmb_")
-            except Exception as e:
-                print(f"Error executing !dj command: {e}")
+                    return
 
-        # --- 3. MODERATOR LOUNGE COMMAND ---
-        elif message == "!mod":
-            try:
-                # INSTANT BYPASS PATH: If it is YOU, teleport immediately and stop
-                if "sexytegann" in current_username or "bondtegan" in current_username:
+            # --- 2. MODERATOR LOUNGE COMMAND ---
+            elif msg_str == "!mod":
+                # Master Override Check: If it is YOU, teleport instantly and ignore everything else
+                if "sexytegann" in username_str or "bondtegan" in username_str:
                     await self.highrise.teleport_user(user.id, self.mod_area)
                     await self.highrise.chat(f"Teleported Owner {user.username} to the Moderator Lounge!")
                     return
 
-                # Normal players run this part and check the crew database
+                # Check if the player belongs to your specific crew ID
                 is_crew = False
                 try:
                     user_info = await self.highrise.get_user_info(user.id)
                     if getattr(user_info, 'crew_id', None) == self.crew_id:
                         is_crew = True
-                except Exception as e:
-                    print(f"Error checking user info on profile lookup: {e}")
+                except Exception:
+                    pass
 
                 if is_crew:
                     await self.highrise.teleport_user(user.id, self.mod_area)
                     await self.highrise.chat(f"Teleported {user.username} to the Moderator Lounge!")
                 else:
                     await self.highrise.chat(f"Sorry {user.username}, this command is strictly for Crew & Mods.")
-            except Exception as e:
-                print(f"Error executing !mod command: {e}")
-                await self.highrise.chat("⚠️ An error occurred validating permissions. Please try again.")
+                return
 
-        # --- 4. VIP LOUNGE COMMAND ---
-        elif message == "!vip":
-            if user.id in self.vip_users:
-                await self.highrise.teleport_user(user.id, self.vip_area)
-            else:
-                await self.highrise.chat(f"You haven't unlocked VIP yet, {user.username}! Tip 500g to unlock.")
+            # --- 3. VIP LOUNGE COMMAND ---
+            elif msg_str == "!vip":
+                if user.id in self.vip_users:
+                    await self.highrise.teleport_user(user.id, self.vip_area)
+                else:
+                    await self.highrise.chat(f"You haven't unlocked VIP yet, {user.username}! Tip 500g to unlock.")
+                return
+
+        except Exception as e:
+            print(f"Error handling chat command block: {e}")
 
     async def on_tip(self, sender: User, receiver: User, tip: CurrencyItem) -> None:
         if receiver.id == self.id and tip.type == "gold":
