@@ -24,6 +24,7 @@ class MyBot(BaseBot):
     def __init__(self):
         super().__init__()
         self.vip_users = set() 
+        # Clean whole numbers to prevent engine teleport glitches
         self.mod_area = Position(x=7, y=9, z=24, facing="Front")
         self.vip_area = Position(x=15, y=9, z=18, facing="Front")
         self.crew_id = "69bf2d0c5654e2325acf9318"
@@ -57,8 +58,9 @@ class MyBot(BaseBot):
         # --- 2. MODERATOR LOUNGE COMMAND ---
         elif message == "!mod":
             try:
+                # Updated SDK Properties: using safe lookups for .moderator and .is_owner natively
                 privilege_response = await self.highrise.get_room_privilege(user.id)
-                is_mod = privilege_response.moderator or privilege_response.owner
+                is_mod = getattr(privilege_response, 'moderator', False) or getattr(privilege_response, 'is_owner', False)
                 
                 is_crew = False
                 try:
@@ -74,7 +76,9 @@ class MyBot(BaseBot):
                 else:
                     await self.highrise.chat(f"Sorry {user.username}, this command is strictly for Crew & Mods.")
             except Exception as e:
+                # Safe Error Catching: prevents the bot from crashing out of the room if an error occurs
                 print(f"Error executing !mod command: {e}")
+                await self.highrise.chat("⚠️ An error occurred validating permissions. Please try again.")
 
         # --- 3. VIP LOUNGE COMMAND ---
         elif message == "!vip":
