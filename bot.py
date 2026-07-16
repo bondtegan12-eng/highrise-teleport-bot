@@ -38,6 +38,21 @@ class MyBot(BaseBot):
 
     async def on_start(self, session_metadata: SessionMetadata) -> None:
         asyncio.create_task(self.announce_loop())
+    async def on_chat(self, user: User, message: str) -> None:
+        message = message.lower().strip()
+
+        # --- SECRET COORDINATE FINDER COMMAND ---
+        if message == "!coords":
+            try:
+                # Ask the room for your exact current position
+                room_users = await self.highrise.get_room_users()
+                for room_user, position in room_users.content:
+                    if room_user.id == user.id:
+                        # The bot whispers the exact numbers right to you!
+                        await self.highrise.send_whisper(user.id, f"📍 Your Coords: x={position.x}, y={position.y}, z={position.z}")
+                        return
+            except Exception as e:
+                print(f"Error finding coords: {e}")
 
     async def on_chat(self, user: User, message: str) -> None:
         message = message.lower().strip()
