@@ -5,15 +5,19 @@ from aiohttp import web
 from highrise import BaseBot, Position, CurrencyItem
 from highrise.models import SessionMetadata, User
 
-# --- ELIMINATE RENDER PORT CLASHES ---
+# --- FIX RENDER PORT BINDING ---
 async def start_web_server():
     app = web.Application()
     runner = web.AppRunner(app)
     await runner.setup()
-    # Using port 0 forces Render to always pick a free open port, completely stopping clashing errors
-    site = web.TCPSite(runner, '0.0.0.0', 0)
+    
+    # Render forces you to use their specific assigned port
+    port = int(os.environ.get("PORT", 8080)) 
+    
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print("🌍 Keep-Alive web system securely active!")
+    print(f"🌍 Keep-Alive web system securely active on port {port}!")
+
 
 # --- THE UN-CRASHABLE BOT LOGIC ---
 class MyBot(BaseBot):
@@ -77,9 +81,8 @@ class MyBot(BaseBot):
 
 if __name__ == "__main__":
     from highrise.__main__ import main, BotDefinition
+
     
-    os.environ["api_token"] = "2c001cb06c4370e639be2d7a24cf4e7a0a860ef708d45d11cde0960653d0e8a6"
-    os.environ["room_id"] = "64a094a74134ad0fd77b8734"
     
     loop = asyncio.get_event_loop()
     room = os.environ.get("room_id")
