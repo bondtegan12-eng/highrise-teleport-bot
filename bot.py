@@ -1,6 +1,5 @@
 import asyncio
 import os
-import sys
 from aiohttp import web
 from highrise import BaseBot, Position, CurrencyItem
 from highrise.models import SessionMetadata, User
@@ -23,9 +22,7 @@ async def start_web_server():
 class MyBot(BaseBot):
     def __init__(self):
         super().__init__()
-        # Database removed - VIPs will reset if bot restarts
         self.vip_users = set() 
-        
         self.mod_area = Position(x=7.0, y=9.25, z=23.51, facing="Front")
         self.vip_area = Position(x=15.01, y=9.25, z=17.99, facing="Front")
         self.crew_id = "69bf2d0c5654e2325acf9318"
@@ -39,6 +36,8 @@ class MyBot(BaseBot):
                 pass
 
     async def on_start(self, session_metadata: SessionMetadata) -> None:
+        # Starts the keep-alive web server right as the bot logs into the room
+        asyncio.create_task(start_web_server())
         asyncio.create_task(self.announce_loop())
 
     async def on_chat(self, user: User, message: str) -> None:
@@ -74,21 +73,3 @@ class MyBot(BaseBot):
                 self.vip_users.add(sender.id)
                 await self.highrise.send_whisper(sender.id, "🎉 Thank you for the tip! You have unlocked the !vip lounge for this session.")
                 await self.highrise.chat(f"🌟 {sender.username} just tipped 500g and unlocked VIP status! 🌟")
-
-if __name__ == "__main__":
-    from highrise.__main__ import main, BotDefinition
-    
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_web_server())
-    
-    room_id = os.environ.get("ROOM_ID")
-    api_token = os.environ.get("API_TOKEN")
-
-    
-    if not room_id or not api_token:
-        print("❌ Error: room_id or api_token environment variables missing in Render dashboard.")
-        sys.exit(1)
-        
-    definitions = [BotDefinition(MyBot(), room_id, api_token)]
-    loop.run_until_complete(main(definitions))
-
