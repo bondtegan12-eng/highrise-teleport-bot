@@ -4,9 +4,9 @@ from aiohttp import web
 import psycopg2
 from highrise import BaseBot, Position, CurrencyItem
 from highrise.models import SessionMetadata, User
+from highrise.__main__ import BotDefinition # Added structural library fix
 
 # --- DATABASE LOGIC ---
-# Paste your Supabase URI string here
 DB_URI = "YOUR_SUPABASE_CONNECTION_STRING_HERE"
 
 def init_db():
@@ -113,8 +113,7 @@ class MyBot(BaseBot):
                 await self.highrise.send_whisper(sender.id, "🎉 Thank you for the tip! You have permanently unlocked the !vip lounge.")
                 await self.highrise.chat(f"🌟 {sender.username} just tipped 500g and unlocked VIP status! 🌟")
 
-# Launcher block configures both Highrise and the WebServer to start up at the same time
-# Launcher block configures both Highrise and the WebServer to start up at the same time
+# Launcher block fixes structural parameters directly inside the environment definition
 if __name__ == "__main__":
     from highrise.__main__ import main
     
@@ -123,10 +122,12 @@ if __name__ == "__main__":
     
     room_id = "64a094a74134ad0fd77b8734"
     api_token = "2c001cb06c4370e639be2d7a24cf4e7a0a860ef708d45d11cde0960633d0e8a6"
-    bot_class = "MyBot"
     
-    # Update this line to pass the class definition cleanly
-    loop.run_until_complete(main(bot_class))
+    # Formats structural definitions correctly to satisfy SDK logic
+    definitions = [BotDefinition(MyBot(), room_id, api_token)]
+    
+    loop.run_until_complete(main(definitions))
+
 
 
 
