@@ -24,7 +24,6 @@ class MyBot(BaseBot):
     def __init__(self):
         super().__init__()
         self.vip_users = set() 
-        # Clean whole numbers to prevent engine teleport glitches
         self.mod_area = Position(x=7, y=9, z=24, facing="Front")
         self.vip_area = Position(x=15, y=9, z=18, facing="Front")
         self.dj_area = Position(x=16, y=0, z=24, facing="FrontRight")
@@ -43,6 +42,7 @@ class MyBot(BaseBot):
 
     async def on_chat(self, user: User, message: str) -> None:
         message = message.lower().strip()
+        current_username = user.username.lower()
 
         # --- 1. COORDINATE TRACKER COMMAND ---
         if message == "!coords":
@@ -58,22 +58,32 @@ class MyBot(BaseBot):
                 print(f"Error finding coords: {e}")
                 return
 
-        # --- 2. MODERATOR LOUNGE COMMAND ---
+        # --- 2. EXCLUSIVE DJ BOOTH COMMAND ---
+        elif message == "!dj":
+            try:
+                # Strictly permits nxmb_ or yourself to access the stage instantly
+                if "nxmb_" in current_username or "sexytegann" in current_username or "bondtegan" in current_username:
+                    await self.highrise.teleport_user(user.id, self.dj_area)
+                    await self.highrise.chat(f"🎧 Welcome to the stage, DJ {user.username}!")
+                else:
+                    await self.highrise.chat(f"Sorry {user.username}, the DJ Booth is reserved exclusively for @nxmb_")
+            except Exception as e:
+                print(f"Error executing !dj command: {e}")
+
+        # --- 3. MODERATOR LOUNGE COMMAND ---
         elif message == "!mod":
             try:
-                current_username = user.username.lower()
-                
-                # Master Owner Bypass Block (Checks for your exact in-game name)
+                # FIRST PRIORITY: Always let you pass instantly without any error checks
                 if "sexytegann" in current_username or "bondtegan" in current_username:
                     await self.highrise.teleport_user(user.id, self.mod_area)
                     await self.highrise.chat(f"Teleported Owner {user.username} to the Moderator Lounge!")
                     return
 
-                # Check for standard Room Mod permissions
+                # SECOND PRIORITY: Check standard Room Mod permissions for other users
                 privilege_response = await self.highrise.get_room_privilege(user.id)
                 is_mod = getattr(privilege_response, 'moderator', False) or getattr(privilege_response, 'is_owner', False)
                 
-                # Check if the player belongs to your specific crew ID
+                # THIRD PRIORITY: Check if the player belongs to your specific crew ID
                 is_crew = False
                 try:
                     user_info = await self.highrise.get_user_info(user.id)
@@ -90,19 +100,6 @@ class MyBot(BaseBot):
             except Exception as e:
                 print(f"Error executing !mod command: {e}")
                 await self.highrise.chat("⚠️ An error occurred validating permissions. Please try again.")
-
-        # --- 3. EXCLUSIVE DJ BOOTH COMMAND ---
-        elif message == "!dj":
-            try:
-                current_username = user.username.lower()
-                # Strictly permits nxmb_ or yourself to access the stage
-                if "nxmb_" in current_username or "sexytegann" in current_username:
-                    await self.highrise.teleport_user(user.id, self.dj_area)
-                    await self.highrise.chat(f"🎧 Welcome to the stage, DJ {user.username}!")
-                else:
-                    await self.highrise.chat(f"Sorry {user.username}, the DJ Booth is reserved exclusively for @nxmb_")
-            except Exception as e:
-                print(f"Error executing !dj command: {e}")
 
         # --- 4. VIP LOUNGE COMMAND ---
         elif message == "!vip":
