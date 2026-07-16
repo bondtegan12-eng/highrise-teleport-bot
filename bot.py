@@ -26,7 +26,6 @@ class MyBot(BaseBot):
         self.vip_users = set() 
         self.mod_area = Position(x=7, y=9, z=24, facing="Front")
         self.vip_area = Position(x=15, y=9, z=18, facing="Front")
-
         self.crew_id = "69bf2d0c5654e2325acf9318"
 
     async def announce_loop(self):
@@ -40,7 +39,7 @@ class MyBot(BaseBot):
     async def on_start(self, session_metadata: SessionMetadata) -> None:
         asyncio.create_task(self.announce_loop())
 
-     async def on_chat(self, user: User, message: str) -> None:
+    async def on_chat(self, user: User, message: str) -> None:
         message = message.lower().strip()
 
         # --- 1. COORDINATE TRACKER COMMAND ---
@@ -55,24 +54,20 @@ class MyBot(BaseBot):
                 print(f"Error finding coords: {e}")
                 return
 
-        # --- 2. MODERATOR LOUNGE COMMAND (With Crew Logic Enabled) ---
+        # --- 2. MODERATOR LOUNGE COMMAND ---
         elif message == "!mod":
             try:
-                # Check for standard Room Mod or Room Owner permissions
                 privilege_response = await self.highrise.get_room_privilege(user.id)
                 is_mod = privilege_response.moderator or privilege_response.owner
                 
-                # Check if the player belongs to your specific crew ID
                 is_crew = False
                 try:
                     user_info = await self.highrise.get_user_info(user.id)
-                    # Cleaned up SDK call: reads the property straight out of user_info natively
                     if getattr(user_info, 'crew_id', None) == self.crew_id:
                         is_crew = True
                 except Exception as e:
                     print(f"Error checking user info on profile lookup: {e}")
 
-                # If they pass any of the checks, teleport them safely!
                 if is_mod or is_crew:
                     await self.highrise.teleport_user(user.id, self.mod_area)
                     await self.highrise.chat(f"Teleported {user.username} to the Moderator Lounge!")
@@ -87,6 +82,13 @@ class MyBot(BaseBot):
                 await self.highrise.teleport_user(user.id, self.vip_area)
             else:
                 await self.highrise.chat(f"You haven't unlocked VIP yet, {user.username}! Tip 500g to unlock.")
+
+    async def on_tip(self, sender: User, receiver: User, tip: CurrencyItem) -> None:
+        if receiver.id == self.id and tip.type == "gold":
+            if tip.amount >= 500:
+                self.vip_users.add(sender.id)
+                await self.highrise.send_whisper(sender.id, "🎉 Thank you for the tip! You have unlocked the !vip lounge for this session.")
+                await self.highrise.chat(f"🌟 {sender.username} just tipped 500g and unlocked VIP status! 🌟")
 
 if __name__ == "__main__":
     from highrise.__main__ import main, BotDefinition
