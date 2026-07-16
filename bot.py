@@ -61,10 +61,11 @@ class MyBot(BaseBot):
         # --- 2. EXCLUSIVE DJ BOOTH COMMAND ---
         elif message == "!dj":
             try:
-                # Strictly permits nxmb_ or yourself to access the stage instantly
+                # BULLETPROOF BYPASS: Execute instantly for specific users, bypass all other code lines
                 if "nxmb_" in current_username or "sexytegann" in current_username or "bondtegan" in current_username:
                     await self.highrise.teleport_user(user.id, self.dj_area)
                     await self.highrise.chat(f"🎧 Welcome to the stage, DJ {user.username}!")
+                    return
                 else:
                     await self.highrise.chat(f"Sorry {user.username}, the DJ Booth is reserved exclusively for @nxmb_")
             except Exception as e:
@@ -73,17 +74,16 @@ class MyBot(BaseBot):
         # --- 3. MODERATOR LOUNGE COMMAND ---
         elif message == "!mod":
             try:
-                # FIRST PRIORITY: Always let you pass instantly without any error checks
+                # BULLETPROOF BYPASS: If it is YOU, teleport instantly and STOP running the rest of this function
                 if "sexytegann" in current_username or "bondtegan" in current_username:
                     await self.highrise.teleport_user(user.id, self.mod_area)
                     await self.highrise.chat(f"Teleported Owner {user.username} to the Moderator Lounge!")
                     return
 
-                # SECOND PRIORITY: Check standard Room Mod permissions for other users
+                # Regular players hit the permission check below
                 privilege_response = await self.highrise.get_room_privilege(user.id)
                 is_mod = getattr(privilege_response, 'moderator', False) or getattr(privilege_response, 'is_owner', False)
                 
-                # THIRD PRIORITY: Check if the player belongs to your specific crew ID
                 is_crew = False
                 try:
                     user_info = await self.highrise.get_user_info(user.id)
