@@ -40,14 +40,14 @@ class MyBot(BaseBot):
     async def on_start(self, session_metadata: SessionMetadata) -> None:
         asyncio.create_task(self.announce_loop())
 
-    async def on_chat(self, user: User, message: str) -> None:
+     async def on_chat(self, user: User, message: str) -> None:
         message = message.lower().strip()
 
         # --- 1. COORDINATE TRACKER COMMAND ---
         if message == "!coords":
             try:
                 room_users = await self.highrise.get_room_users()
-                for room_user, position in room_users.content:
+                for room_user, position in room_users:
                     if room_user.id == user.id:
                         await self.highrise.send_whisper(user.id, f"📍 Your Coords: x={position.x}, y={position.y}, z={position.z}")
                         return
@@ -55,24 +55,31 @@ class MyBot(BaseBot):
                 print(f"Error finding coords: {e}")
                 return
 
-        # --- 2. MODERATOR LOUNGE COMMAND ---
+        # --- 2. MODERATOR LOUNGE COMMAND (With Crew Logic Enabled) ---
         elif message == "!mod":
-            privilege_response = await self.highrise.get_room_privilege(user.id)
-            is_mod = privilege_response.content.moderator or privilege_response.content.owner
-            
-            is_crew = False
             try:
-                user_info = await self.highrise.get_user_info(user.id)
-                if getattr(user_info.content, 'crew_id', None) == self.crew_id:
-                    is_crew = True
-            except Exception:
-                pass
+                # Check for standard Room Mod or Room Owner permissions
+                privilege_response = await self.highrise.get_room_privilege(user.id)
+                is_mod = privilege_response.moderator or privilege_response.owner
+                
+                # Check if the player belongs to your specific crew ID
+                is_crew = False
+                try:
+                    user_info = await self.highrise.get_user_info(user.id)
+                    # Cleaned up SDK call: reads the property straight out of user_info natively
+                    if getattr(user_info, 'crew_id', None) == self.crew_id:
+                        is_crew = True
+                except Exception as e:
+                    print(f"Error checking user info on profile lookup: {e}")
 
-            if is_mod or is_crew:
-                await self.highrise.teleport_user(user.id, self.mod_area)
-                await self.highrise.chat(f"Teleported {user.username} to the Moderator Lounge!")
-            else:
-                await self.highrise.chat(f"Sorry {user.username}, this command is strictly for Crew & Mods.")
+                # If they pass any of the checks, teleport them safely!
+                if is_mod or is_crew:
+                    await self.highrise.teleport_user(user.id, self.mod_area)
+                    await self.highrise.chat(f"Teleported {user.username} to the Moderator Lounge!")
+                else:
+                    await self.highrise.chat(f"Sorry {user.username}, this command is strictly for Crew & Mods.")
+            except Exception as e:
+                print(f"Error executing !mod command: {e}")
 
         # --- 3. VIP LOUNGE COMMAND ---
         elif message == "!vip":
@@ -80,13 +87,6 @@ class MyBot(BaseBot):
                 await self.highrise.teleport_user(user.id, self.vip_area)
             else:
                 await self.highrise.chat(f"You haven't unlocked VIP yet, {user.username}! Tip 500g to unlock.")
-
-    async def on_tip(self, sender: User, receiver: User, tip: CurrencyItem) -> None:
-        if receiver.id == self.id and tip.type == "gold":
-            if tip.amount >= 500:
-                self.vip_users.add(sender.id)
-                await self.highrise.send_whisper(sender.id, "🎉 Thank you for the tip! You have unlocked the !vip lounge for this session.")
-                await self.highrise.chat(f"🌟 {sender.username} just tipped 500g and unlocked VIP status! 🌟")
 
 if __name__ == "__main__":
     from highrise.__main__ import main, BotDefinition
