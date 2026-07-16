@@ -73,16 +73,19 @@ class MyBot(BaseBot):
                 await self.highrise.send_whisper(sender.id, "🎉 Thank you for the tip! You have unlocked the !vip lounge for this session.")
                 await self.highrise.chat(f"🌟 {sender.username} just tipped 500g and unlocked VIP status! 🌟")
 
-# This hardcodes the parameters so the SDK cannot lose them
 if __name__ == "__main__":
     from highrise.__main__ import main, BotDefinition
+    
+    # Force inject credentials directly into system environment variables
+    os.environ["api_token"] = "2c001cb06c4370e639be2d7a24cf4e7a0a860ef708d45d11cde0960633d0e8a6"
+    os.environ["room_id"] = "64a094a74134ad0fd77b8734"
     
     loop = asyncio.get_event_loop()
     loop.create_task(start_web_server())
     
-    # Pre-filled credentials so the bot bypasses the environment dashboard entirely
-    room = "64a094a74134ad0fd77b8734"
-    token = "2c001cb06c4370e639be2d7a24cf4e7a0a860ef708d45d11cde0960633d0e8a6"
+    room = os.environ.get("room_id")
+    token = os.environ.get("api_token")
         
     definitions = [BotDefinition(MyBot(), room, token)]
     loop.run_until_complete(main(definitions))
+
