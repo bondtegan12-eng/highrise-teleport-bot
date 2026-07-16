@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from aiohttp import web
 from highrise import BaseBot, Position, CurrencyItem
 from highrise.models import SessionMetadata, User
@@ -85,4 +86,12 @@ if __name__ == "__main__":
     token = os.environ.get("api_token")
         
     definitions = [BotDefinition(MyBot(), room, token)]
-    loop.run_until_complete(main(definitions))
+        # Safe loop launcher to prevent Multilogin crashes
+    while True:
+        try:
+            loop.run_until_complete(main(definitions))
+        except Exception as e:
+            print(f"Connection dropped: {e}. Waiting 20 seconds to clear ghost bots safely...")
+            # Forces the script to sleep so Render doesn't flood Highrise with connections
+            time.sleep(20)
+
