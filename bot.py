@@ -21,7 +21,6 @@ class KeepAliveServer(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(b"Bot is alive!")
 
 def run_web_server():
-    # Render automatically sets a $PORT environment variable. We must bind to it.
     port = int(os.environ.get("PORT", 8080))
     server = http.server.HTTPServer(("0.0.0.0", port), KeepAliveServer)
     print(f"[Web Server] Keeping bot awake on port {port}")
@@ -30,12 +29,12 @@ def run_web_server():
 # Start the web server thread immediately so Render's health check passes
 threading.Thread(target=run_web_server, daemon=True).start()
 
-# --- HIGHRISE CONFIGURATION ---
-ROOM_ID = os.environ.get("HIGHRISE_ROOM_ID", "64a094a74134ad0fd77b8734")
+# --- HIGHRISE HARDCODED CONFIGURATION ---
+ROOM_ID = "64a094a74134ad0fd77b8734"
 CREW_ID = "69bf2d0c5654e2325acf9318"
 OWNER_USER_ID = "61ccb2a0fa2db3178100252c"
-F1_OWNER_USER_ID = "61ccb2a0fa2db3178100252c"
 VIP_TIP_THRESHOLD_GOLD = 500
+TARGET_DJ_USERNAME = "nxmb_"
 
 TELEPORT_DESTINATIONS: dict[str, Position] = {
     "!vip": Position(x=17, y=9, z=18, facing="FrontRight"),
@@ -54,7 +53,6 @@ class TeleportBot(BaseBot):
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute("CREATE TABLE IF NOT EXISTS tips (user_id TEXT PRIMARY KEY, gold_amount INTEGER DEFAULT 0)")
-            cursor.execute("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT)")
             conn.commit()
 
     def _get_tip_total(self, user_id: str) -> int:
@@ -71,21 +69,8 @@ class TeleportBot(BaseBot):
             conn.commit()
         return self._get_tip_total(user_id)
 
-    def _get_state(self, key: str, default: str | None = None) -> str | None:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT value FROM state WHERE key = ?", (key,))
-            row = cursor.fetchone()
-            return row[0] if row else default
-
-    def _set_state(self, key: str, value: str) -> None:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?", (key, value, value))
-            conn.commit()
-
     async def on_start(self, session_metadata) -> None:
-        print(f"[TeleportBot] Connected to Highrise as bot account ID={self.highrise.my_id}")
+        print(f"[TeleportBot] Connected to Highrise room {ROOM_ID}")
 
     async def on_user_join(self, user: User, position: Position | AnchorPosition) -> None:
         try:
@@ -93,8 +78,8 @@ class TeleportBot(BaseBot):
         except Exception as exc:
             print(f"[TeleportBot] Failed welcome message: {exc}")
 
-        dj_id = self._get_state("dj_user_id")
-        if user.id == dj_id:
+        # Auto-teleport targeted user nxmb_ to DJ area when they join
+        if user.username.lower() == TARGET_DJ_USERNAME.lower():
             await self._delayed_teleport(user, TELEPORT_DESTINATIONS["!dj"])
 
     async def _delayed_teleport(self, user: User, position: Position, delay: float = 2.0) -> None:
@@ -107,7 +92,9 @@ class TeleportBot(BaseBot):
     async def on_chat(self, user: User, message: str) -> None:
         command = message.strip().lower()
         permissions = await self.highrise.get_room_permissions(user.id)
-        is_room_mod = permissions.moderator or user.id == OWNER_USER_ID
+        
+        # Check if they are a Room Mod OR Bot Owner OR have the specified Crew ID
+        is_room_mod = permissions.moderator or user.id == OWNER_USER_ID or (hasattr(user, 'crew_id') and getattr(user, 'crew_id') == CREW_ID)
 
         if command == "!vip":
             total_tipped = self._get_tip_total(user.id)
@@ -120,33 +107,19 @@ class TeleportBot(BaseBot):
             if is_room_mod:
                 await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
             else:
-                await self.highrise.chat(f"@{user.username}, only Room Moderators can use !mod.")
+                await self.highrise.chat(f"@{user.username}, only Crew or Room Moderators can use !mod.")
 
         elif command == "!dj":
-            dj_id = self._get_state("dj_user_id")
-            if user.id == dj_id or user.id == OWNER_USER_ID:
+            if user.username.lower() == TARGET_DJ_USERNAME.lower() or user.id == OWNER_USER_ID:
                 await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!dj"])
             else:
-                await self.highrise.chat(f"@{user.username}, you are not the active DJ.")
-
-        elif command.startswith("!setdj "):
-            if user.id == OWNER_USER_ID:
-                target_username = message.split(" ", 1)[1].replace("@", "").strip()
-                room_users = await self.highrise.get_room_users()
-                target_user = next((u for u in room_users.content if u.username.lower() == target_username.lower()), None)
-                
-                if target_user:
-                    self._set_state("dj_user_id", target_user.id)
-                    await self.highrise.chat(f"DJ successfully set to @{target_user.username}!")
-                else:
-                    await self.highrise.chat(f"Could not find user @{target_username} in the room.")
-            else:
-                await self.highrise.chat("Only the bot owner can set the DJ.")
+                await self.highrise.chat(f"@{user.username}, only @{TARGET_DJ_USERNAME} can use !dj.")
 
     async def on_tip(self, sender: User, receiver: User, tip: CurrencyItem) -> None:
         if receiver.id == self.highrise.my_id and isinstance(tip, CurrencyItem):
             new_total = self._add_tip(sender.id, tip.amount)
             if new_total >= VIP_TIP_THRESHOLD_GOLD:
                 await self.highrise.chat(f"🎉 @{sender.username} has unlocked permanent VIP access by reaching {new_total}g tipped!")
+
 
 
