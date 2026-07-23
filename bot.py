@@ -120,11 +120,18 @@ class TeleportBot(BaseBot):
                 print(f"[Timer Error] Could not send message: {announce_err}", flush=True)
 
     async def on_user_join(self, user: User, position: Position | AnchorPosition) -> None:
-        # Welcome message restored
         try:
             await self.highrise.chat(ANNOUNCEMENT_MESSAGE)
         except Exception as exc:
             print(f"[TeleportBot] Failed welcome message: {exc}", flush=True)
+
+        # FIXED PERSISTENCE ENGINE: Check their actual gold total first. !f1 can never break this.
+        total_tipped = self._get_tip_total(user.id)
+        if total_tipped >= VIP_TIP_THRESHOLD_GOLD:
+            print(f"[VIP Rejoin Verified] User: {user.username} has permanent VIP record.", flush=True)
+            await self._delayed_teleport(user, TELEPORT_DESTINATIONS["!vip"])
+            self._save_user_zone(user.id, "!vip")
+            return
 
         saved_zone = self._get_user_zone(user.id)
         if saved_zone in TELEPORT_DESTINATIONS:
@@ -146,7 +153,7 @@ class TeleportBot(BaseBot):
     async def on_tip(self, sender: User, receiver: User, tip: CurrencyItem | Item) -> None:
         if isinstance(tip, CurrencyItem):
             new_total = self._add_tip(sender.id, tip.amount)
-            print(f"[Tip Received] {sender.username} tipped {tip.amount}g. Total: {new_total}g", flush=True)
+            print(f"[Tip Tracked] {sender.username} deposited {tip.amount}g. Total balance: {new_total}g", flush=True)
             if new_total >= VIP_TIP_THRESHOLD_GOLD:
                 await self.highrise.chat(f"💎 Thanks @{sender.username}! You unlocked VIP! Type !vip to teleport anytime.")
                 await self.highrise.teleport(sender.id, TELEPORT_DESTINATIONS["!vip"])
@@ -170,7 +177,6 @@ class TeleportBot(BaseBot):
                 
                 if not is_owner:
                     try:
-                        # Direct uncrashable crew authorization logic
                         raw_payload = str(user).lower()
                         if str(CREW_ID).strip() in raw_payload or hasattr(user, 'crew_id') or hasattr(user, 'crew'):
                             is_crew_member = True
@@ -185,7 +191,6 @@ class TeleportBot(BaseBot):
                     except Exception:
                         pass
 
-                # Ultimate pass protection so your 48 crew members never get blocked by library version errors
                 if is_crew_member or is_owner:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
                     self._save_user_zone(user.id, "!mod")
@@ -200,8 +205,8 @@ class TeleportBot(BaseBot):
                     await self.highrise.chat(f"@{user.username}, only @{TARGET_DJ_USERNAME} can use !dj.")
 
             elif command == "!f1":
-                # !f1 Command fully restored and functional
                 await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!f1"])
+                # SAFE RESET: We clear their active zone, but their gold total inside the tips table remains untouched!
                 self._clear_user_zone(user.id)
                     
         except Exception as chat_err:
