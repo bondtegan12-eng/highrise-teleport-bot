@@ -30,8 +30,10 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # --- HIGHRISE HARDCODED CONFIGURATION ---
 ROOM_ID = "64a094a74134ad0fd77b8734"
 OWNER_USER_ID = "61ccb2a0fa2db3178100252c"
+CREW_ID = "69bf2d0c5654e2325acf9318"  # Your Exact Crew ID Linked Natively
 VIP_TIP_THRESHOLD_GOLD = 500
 TARGET_DJ_USERNAME = "nxmb_"
+OWNER_USERNAME = "sexytegann"
 
 TELEPORT_DESTINATIONS: dict[str, Position] = {
     "!vip": Position(x=17, y=9, z=18, facing="FrontRight"),
@@ -57,7 +59,7 @@ class TeleportBot(BaseBot):
             cursor = conn.cursor()
             cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
-            return row[0] if row else 0
+            return row if row else 0
 
     def _add_tip(self, user_id: str, amount: int) -> int:
         with sqlite3.connect(DB_PATH) as conn:
@@ -90,35 +92,45 @@ class TeleportBot(BaseBot):
         try:
             command = message.strip().lower()
             
-            # Request explicit room permission profile for safety
-            permissions = await self.highrise.get_room_permissions(user.id)
-            is_room_mod = permissions.moderator or user.id == OWNER_USER_ID
-
             if command == "!vip":
                 total_tipped = self._get_tip_total(user.id)
-                if total_tipped >= VIP_TIP_THRESHOLD_GOLD or user.id == OWNER_USER_ID:
+                if total_tipped >= VIP_TIP_THRESHOLD_GOLD or user.id == OWNER_USER_ID or user.username.lower() == OWNER_USERNAME.lower():
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!vip"])
                 else:
                     await self.highrise.chat(f"@{user.username}, you need to tip {VIP_TIP_THRESHOLD_GOLD}g total for VIP access. You have tipped {total_tipped}g.")
 
             elif command == "!mod":
-                if is_room_mod:
+                # Safe native crew verification step
+                is_crew_member = False
+                if hasattr(user, 'crew_id') and getattr(user, 'crew_id') == CREW_ID:
+                    is_crew_member = True
+                
+                # Check room owner identifiers
+                is_admin = user.id == OWNER_USER_ID or user.username.lower() == OWNER_USERNAME.lower()
+
+                if is_crew_member or is_admin:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
                 else:
-                    await self.highrise.chat(f"@{user.username}, only Room Moderators can use !mod.")
+                    # Alternative fallback: check room users cache array in case socket details are delayed
+                    room_data = await self.highrise.get_room_users()
+                    cached_user = next((u for u in room_data.content if u.id == user.id), None)
+                    if cached_user and hasattr(cached_user, 'crew_id') and getattr(cached_user, 'crew_id') == CREW_ID:
+                        await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
+                    else:
+                        await self.highrise.chat(f"@{user.username}, only members of our Crew can use !mod.")
 
             elif command == "!dj":
-                if user.username.lower() == TARGET_DJ_USERNAME.lower() or user.id == OWNER_USER_ID:
+                if user.username.lower() == TARGET_DJ_USERNAME.lower() or user.id == OWNER_USER_ID or user.username.lower() == OWNER_USERNAME.lower():
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!dj"])
                 else:
                     await self.highrise.chat(f"@{user.username}, only @{TARGET_DJ_USERNAME} can use !dj.")
                     
         except Exception as chat_err:
-            # Capture any hidden crashes inside the chat logic to keep the bot from leaving
-            print(f"[Chat Error] Prevented bot crash: {chat_err}")
+            print(f"[Chat Handling Log] Caught entry: {chat_err}")
 
     async def on_tip(self, sender: User, receiver: User, tip: CurrencyItem) -> None:
         if receiver.id == self.highrise.my_id and isinstance(tip, CurrencyItem):
             new_total = self._add_tip(sender.id, tip.amount)
             if new_total >= VIP_TIP_THRESHOLD_GOLD:
                 await self.highrise.chat(f"🎉 @{sender.username} has unlocked permanent VIP access by reaching {new_total}g tipped!")
+
