@@ -73,7 +73,7 @@ class TeleportBot(BaseBot):
                 cursor = conn.cursor()
                 cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                return row[0] if row else 0
+                return row if row else 0
         except Exception:
             return 0
 
@@ -108,7 +108,7 @@ class TeleportBot(BaseBot):
                 cursor = conn.cursor()
                 cursor.execute("SELECT zone_command FROM active_zones WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                return row[0] if row else None
+                return row if row else None
         except Exception:
             return None
 
@@ -171,7 +171,7 @@ class TeleportBot(BaseBot):
 
         if command.startswith("!givevip "):
             if is_owner:
-                target_username = clean_message.split(" ")[1].replace("@", "").strip().lower()
+                target_username = clean_message.split(" ").replace("@", "").strip().lower()
                 room_users = await self.highrise.get_room_users()
                 found_user = False
                 for target_user, position in room_users.content:
@@ -215,6 +215,8 @@ class TeleportBot(BaseBot):
                 self._save_user_zone(user.id, "!mod")
             else:
                 await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
+                self._save_user_zone(user.id, "!mod")
+
 
 
 
