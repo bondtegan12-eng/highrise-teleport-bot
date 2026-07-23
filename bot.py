@@ -185,9 +185,8 @@ class TeleportBot(BaseBot):
                             break
                     if not found_user:
                         await self.highrise.chat(f"Error: @{target_username} must be standing in the room to use this.")
-                return
 
-            if command == "!vip":
+            elif command == "!vip":
                 total_tipped = self._get_tip_total(user.id)
                 if total_tipped >= VIP_TIP_THRESHOLD_GOLD or is_owner:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!vip"])
@@ -213,6 +212,7 @@ class TeleportBot(BaseBot):
                         pass
                 if is_crew_member or is_owner:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
+
 
 
 
