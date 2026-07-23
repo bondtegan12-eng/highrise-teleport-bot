@@ -7,6 +7,7 @@ import os
 import sqlite3
 import threading
 import time
+import sys
 from pathlib import Path
 
 from highrise import AnchorPosition, BaseBot, Position, User
@@ -27,7 +28,7 @@ def run_web_server():
 
 threading.Thread(target=run_web_server, daemon=True).start()
 
-# --- HIGHRISE CONFIGURATION ---
+# --- HIGHRISE HARDCODED CONFIGURATION ---
 ROOM_ID = "64a094a74134ad0fd77b8734"
 OWNER_USER_ID = "61ccb2a0fa2db3178100252c"
 CREW_ID = "69bf2d0c5654e2325acf9318" 
@@ -35,8 +36,15 @@ VIP_TIP_THRESHOLD_GOLD = 500
 TARGET_DJ_USERNAME = "nxmb_"
 OWNER_USERNAME = "sexytegann"
 
-# The message that repeats every 5 minutes
 ANNOUNCEMENT_MESSAGE = "WELCOME TO BAMBS BDAY BASH JOIN THE PARTY -- tip me 500g for VIP!"
+
+# --- BACKUP CREW USERNAMES LIST ---
+# If a crew member's tag is hidden, add their username here (all lowercase, no @ symbol)
+# separated by commas, like this: {"username1", "username2"}
+BACKUP_CREW_USERNAMES: set[str] = {
+    "sexytegann",
+    # "put_crew_username_here",
+}
 
 TELEPORT_DESTINATIONS: dict[str, Position] = {
     "!vip": Position(x=17, y=9, z=18, facing="FrontRight"),
@@ -45,7 +53,7 @@ TELEPORT_DESTINATIONS: dict[str, Position] = {
     "!f1": Position(x=10, y=0, z=10, facing="FrontRight"),
 }
 
-# --- RAILWAY PERSISTENT DATABASE PATH ---
+# --- RAILWAY PERSISTENT DATABASE FIX ---
 if os.path.exists("/data"):
     DB_PATH = Path("/data/bot_data.db")
 else:
@@ -104,13 +112,11 @@ class TeleportBot(BaseBot):
 
     async def on_start(self, session_metadata) -> None:
         print(f"[TeleportBot] Connected to Highrise room {ROOM_ID}")
-        # Start the 5-minute announcement loop inside the Highrise async timeline loop
         asyncio.create_task(self._announcement_loop())
 
     async def _announcement_loop(self) -> None:
-        """Sends the room advertisement text every 5 minutes (300 seconds)."""
         while True:
-            await asyncio.sleep(300)  # Wait exactly 5 minutes
+            await asyncio.sleep(300)
             try:
                 print("[Timer] Sending automated room announcement...")
                 await self.highrise.chat(ANNOUNCEMENT_MESSAGE)
@@ -118,19 +124,16 @@ class TeleportBot(BaseBot):
                 print(f"[Timer Error] Could not send message: {announce_err}")
 
     async def on_user_join(self, user: User, position: Position | AnchorPosition) -> None:
-        # Check if this returning user was previously in a VIP or Mod zone first
         saved_zone = self._get_user_zone(user.id)
         if saved_zone in TELEPORT_DESTINATIONS:
             print(f"[Auto-Teleport] Returning {user.username} back to {saved_zone}")
             await self._delayed_teleport(user, TELEPORT_DESTINATIONS[saved_zone])
             return
 
-        # Trigger fallback DJ logic if no other manual zone was saved
         if user.username.lower() == TARGET_DJ_USERNAME.lower():
             await self._delayed_teleport(user, TELEPORT_DESTINATIONS["!dj"])
             return
 
-        # Send standard welcome message if they are spawning at normal ground level
         try:
             await self.highrise.chat(ANNOUNCEMENT_MESSAGE)
         except Exception as exc:
@@ -157,14 +160,18 @@ class TeleportBot(BaseBot):
                     await self.highrise.chat(f"@{user.username}, you need to tip {VIP_TIP_THRESHOLD_GOLD}g total for VIP access. You have tipped {total_tipped}g.")
 
             elif command == "!mod":
+                # Double-check permissions: check crew tag, then owner status, then backup username list
                 is_crew_member = False
                 if hasattr(user, 'crew_id') and getattr(user, 'crew_id') == CREW_ID:
                     is_crew_member = True
+                
+                is_backup_username = user.username.lower() in BACKUP_CREW_USERNAMES
 
-                if is_crew_member or is_owner:
+                if is_crew_member or is_owner or is_backup_username:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
                     self._save_user_zone(user.id, "!mod")
                 else:
+                    # Final cache check before failing
                     room_data = await self.highrise.get_room_users()
                     cached_user = next((u for u in room_data.content if u.id == user.id), None)
                     if cached_user and hasattr(cached_user, 'crew_id') and getattr(cached_user, 'crew_id') == CREW_ID:
@@ -195,7 +202,6 @@ class TeleportBot(BaseBot):
 # --- PERSISTENT LOOP RUNNER WITH FORCED CRASH FIX ---
 def start_bot_loop():
     from highrise.__main__ import BotDefinition, main as run_bots
-    import sys
     
     definitions = [
         BotDefinition(
@@ -211,12 +217,12 @@ def start_bot_loop():
     except Exception as loop_err:
         print(f"[Connection Dropped] Room went empty: {loop_err}")
     
-    # FORCED CRASH: Exiting with code 1 tricks Railway into seeing a failure,
-    # forcing your "On Failure" policy to instantly restart the bot for free!
+    # Tricks Railway into restarting the bot whenever the connection drops
     sys.exit(1)
 
 if __name__ == "__main__":
     start_bot_loop()
+
 
 
 
