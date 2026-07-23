@@ -42,7 +42,12 @@ TELEPORT_DESTINATIONS: dict[str, Position] = {
     "!f1": Position(x=10, y=0, z=10, facing="FrontRight"),
 }
 
-DB_PATH = Path("bot_data.db")
+# --- RAILWAY PERSISTENT DATABASE FIX ---
+# Checks for Railway's permanent data volume first, otherwise falls back safely
+if os.path.exists("/data"):
+    DB_PATH = Path("/data/bot_data.db")
+else:
+    DB_PATH = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ".")) / "bot_data.db"
 
 class TeleportBot(BaseBot):
     def __init__(self) -> None:
@@ -57,11 +62,14 @@ class TeleportBot(BaseBot):
             conn.commit()
 
     def _get_tip_total(self, user_id: str) -> int:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,))
-            row = cursor.fetchone()
-            return row if row else 0
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,))
+                row = cursor.fetchone()
+                return row[0] if row else 0
+        except Exception:
+            return 0
 
     def _add_tip(self, user_id: str, amount: int) -> int:
         with sqlite3.connect(DB_PATH) as conn:
@@ -83,32 +91,36 @@ class TeleportBot(BaseBot):
             conn.commit()
 
     def _get_user_zone(self, user_id: str) -> str | None:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT zone_command FROM active_zones WHERE user_id = ?", (user_id,))
-            row = cursor.fetchone()
-            return row if row else None
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT zone_command FROM active_zones WHERE user_id = ?", (user_id,))
+                row = cursor.fetchone()
+                return row[0] if row else None
+        except Exception:
+            return None
 
     async def on_start(self, session_metadata) -> None:
         print(f"[TeleportBot] Connected to Highrise room {ROOM_ID}")
 
     async def on_user_join(self, user: User, position: Position | AnchorPosition) -> None:
-        # STEP 1: Always check the saved zone memory FIRST
+        # Check if this returning user was previously in a VIP or Mod zone first
         saved_zone = self._get_user_zone(user.id)
         if saved_zone in TELEPORT_DESTINATIONS:
             print(f"[Auto-Teleport] Returning {user.username} back to {saved_zone}")
             await self._delayed_teleport(user, TELEPORT_DESTINATIONS[saved_zone])
             return
 
-        # STEP 2: Send the welcome message if they aren't auto-teleporting
+        # Trigger fallback DJ logic if no other manual zone was saved
+        if user.username.lower() == TARGET_DJ_USERNAME.lower():
+            await self._delayed_teleport(user, TELEPORT_DESTINATIONS["!dj"])
+            return
+
+        # Send standard welcome message if they are spawning at normal ground level
         try:
             await self.highrise.chat("WELCOME TO BAMBS BDAY BASH JOIN THE PARTY -- tip me 500g for VIP!")
         except Exception as exc:
             print(f"[TeleportBot] Failed welcome message: {exc}")
-
-        # STEP 3: Fallback to active DJ logic if no other zone was saved
-        if user.username.lower() == TARGET_DJ_USERNAME.lower():
-            await self._delayed_teleport(user, TELEPORT_DESTINATIONS["!dj"])
 
     async def _delayed_teleport(self, user: User, position: Position, delay: float = 2.5) -> None:
         await asyncio.sleep(delay)
