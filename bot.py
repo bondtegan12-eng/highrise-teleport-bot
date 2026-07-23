@@ -1,204 +1,60 @@
 from __future__ import annotations
-
-# --- SUPPRESS ALL LOG WARNINGS ---
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
 import asyncio
 import http.server
-import json
 import os
 import sqlite3
 import threading
-import time
-import sys
 from pathlib import Path
-
-from highrise import AnchorPosition, BaseBot, Position, User
+from highrise import BaseBot, Position, User, CurrencyItem, Item
 
 # --- WEB SERVER WORKAROUND ---
 class KeepAliveServer(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-type", "text/plain")
         self.end_headers()
         self.wfile.write(b"Bot is alive!")
 
 def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = http.server.HTTPServer(("0.0.0.0", port), KeepAliveServer)
-    print(f"[Web Server] Keeping bot awake on port {port}", flush=True)
+    server = http.server.HTTPServer(("0.0.0.0", int(os.environ.get("PORT", 8080))), KeepAliveServer)
     server.serve_forever()
 
 threading.Thread(target=run_web_server, daemon=True).start()
 
-# --- HIGHRISE HARDCODED CONFIGURATION ---
-ROOM_ID = "64a094a74134ad0fd77b8734"
-OWNER_USER_ID = "61ccb2a0fa2db3178100252c"
-CREW_ID = "69bf2d0c5654e2325acf9318"  # Your Verified Crew ID
+# --- CONFIGURATION ---
+ROOM_ID = "YOUR_ROOM_ID"
 VIP_TIP_THRESHOLD_GOLD = 500
-TARGET_DJ_USERNAME = "nxmb_"
-OWNER_USERNAME = "sexytegann"
+TELEPORT_DESTINATIONS = {"!vip": Position(x=17, y=9, z=18, facing="FrontRight")}
 
-ANNOUNCEMENT_MESSAGE = "WELCOME TO BAMBS BDAY BASH JOIN THE PARTY -- tip me 500g for VIP!"
-
-TELEPORT_DESTINATIONS: dict[str, Position] = {
-    "!vip": Position(x=17, y=9, z=18, facing="FrontRight"),
-    "!mod": Position(x=6, y=9, z=29, facing="FrontRight"),
-    "!dj": Position(x=16, y=0, z=24, facing="FrontRight"),
-    "!f1": Position(x=10, y=0, z=10, facing="FrontRight"),
-}
-
-# --- RAILWAY PERSISTENT DATABASE FIX ---
-if os.path.exists("/data"):
-    DB_PATH = Path("/data/bot_data.db")
-else:
-    DB_PATH = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ".")) / "bot_data.db"
+# --- DATABASE SETUP ---
+DB_PATH = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ".")) / "bot_data.db"
 
 class TeleportBot(BaseBot):
     def __init__(self) -> None:
         super().__init__()
-        self._init_db()
-
-    def _init_db(self) -> None:
         with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("CREATE TABLE IF NOT EXISTS tips (user_id TEXT PRIMARY KEY, gold_amount INTEGER DEFAULT 0)")
-            cursor.execute("CREATE TABLE IF NOT EXISTS active_zones (user_id TEXT PRIMARY KEY, zone_command TEXT)")
+            conn.execute("CREATE TABLE IF NOT EXISTS tips (user_id TEXT PRIMARY KEY, gold_amount INTEGER DEFAULT 0)")
             conn.commit()
-
-    def _get_tip_total(self, user_id: str) -> int:
-        try:
-            with sqlite3.connect(DB_PATH) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,))
-                row = cursor.fetchone()
-                return row if row else 0
-        except Exception:
-            return 0
 
     def _add_tip(self, user_id: str, amount: int) -> int:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute("INSERT INTO tips (user_id, gold_amount) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET gold_amount = gold_amount + ?", (user_id, amount, amount))
             conn.commit()
-        return self._get_tip_total(user_id)
+            return cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,)).fetchone()[0]
 
-    def _save_user_zone(self, user_id: str, zone_command: str) -> None:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO active_zones (user_id, zone_command) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET zone_command = ?", (user_id, zone_command, zone_command))
-            conn.commit()
-
-    def _clear_user_zone(self, user_id: str) -> None:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM active_zones WHERE user_id = ?", (user_id,))
-            conn.commit()
-
-    def _get_user_zone(self, user_id: str) -> str | None:
-        try:
-            with sqlite3.connect(DB_PATH) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT zone_command FROM active_zones WHERE user_id = ?", (user_id,))
-                row = cursor.fetchone()
-                return row if row else None
-        except Exception:
-            return None
-
-    async def on_start(self, session_metadata) -> None:
-        print(f"[TeleportBot] Connected to Highrise room {ROOM_ID}", flush=True)
-        asyncio.create_task(self._announcement_loop())
-
-    async def _announcement_loop(self) -> None:
-        while True:
-            await asyncio.sleep(300)
-            try:
-                print("[Timer] Sending automated room announcement...", flush=True)
-                await self.highrise.chat(ANNOUNCEMENT_MESSAGE)
-            except Exception as announce_err:
-                print(f"[Timer Error] Could not send message: {announce_err}", flush=True)
-
-    async def on_user_join(self, user: User, position: Position | AnchorPosition) -> None:
-        saved_zone = self._get_user_zone(user.id)
-        if saved_zone in TELEPORT_DESTINATIONS:
-            print(f"[Auto-Teleport] Returning {user.username} back to {saved_zone}", flush=True)
-            await self._delayed_teleport(user, TELEPORT_DESTINATIONS[saved_zone])
-            return
-
-        if user.username.lower() == TARGET_DJ_USERNAME.lower():
-            await self._delayed_teleport(user, TELEPORT_DESTINATIONS["!dj"])
-            return
-
-        try:
-            await self.highrise.chat(ANNOUNCEMENT_MESSAGE)
-        except Exception as exc:
-            print(f"[TeleportBot] Failed welcome message: {exc}", flush=True)
-
-    async def _delayed_teleport(self, user: User, position: Position, delay: float = 2.5) -> None:
-        await asyncio.sleep(delay)
-        try:
-            await self.highrise.teleport(user.id, position)
-        except Exception as exc:
-            print(f"[TeleportBot] Teleport failed for {user.username}: {exc}", flush=True)
+    async def on_tip(self, sender: User, receiver: User, tip: CurrencyItem | Item) -> None:
+        if isinstance(tip, CurrencyItem):
+            new_total = self._add_tip(sender.id, tip.amount)
+            if new_total >= VIP_TIP_THRESHOLD_GOLD:
+                await self.highrise.chat(f"💎 Thanks @{sender.username}! You unlocked VIP! Type !vip.")
+                await self.highrise.teleport(sender.id, TELEPORT_DESTINATIONS["!vip"])
 
     async def on_chat(self, user: User, message: str) -> None:
-        try:
-            command = message.strip().lower()
-            is_owner = user.id == OWNER_USER_ID or user.username.lower() == OWNER_USERNAME.lower()
-
-            if command == "!vip":
-                total_tipped = self._get_tip_total(user.id)
-                if total_tipped >= VIP_TIP_THRESHOLD_GOLD or is_owner:
+        if message.strip().lower() == "!vip":
+            with sqlite3.connect(DB_PATH) as conn:
+                row = conn.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user.id,)).fetchone()
+                if row and row[0] >= VIP_TIP_THRESHOLD_GOLD:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!vip"])
-                    self._save_user_zone(user.id, "!vip")
-                else:
-                    await self.highrise.chat(f"@{user.username}, you need to tip {VIP_TIP_THRESHOLD_GOLD}g total for VIP access. You have tipped {total_tipped}g.")
-
-            elif command == "!mod":
-                is_crew_member = False
-                
-                if not is_owner:
-                    try:
-                        # 100% OFFLINE DATA VALIDATION: Scan the current raw memory string dump for the target caller
-                        raw_payload = str(user).lower()
-                        
-                        # Check if their profile structure contains your verified crew identification code
-                        if str(CREW_ID).strip() in raw_payload or hasattr(user, 'crew_id') or hasattr(user, 'crew'):
-                            is_crew_member = True
-                            
-                        # Backup Check: Scan the broader network connection packet array natively
-                        if not is_crew_member:
-                            room_users = await self.highrise.get_room_users()
-                            for item in room_users.content:
-                                if hasattr(item, 'id') and item.id == user.id:
-                                    if str(CREW_ID).strip() in str(item).lower():
-                                        is_crew_member = True
-                                        break
-                    except Exception:
-                        pass
-
-                if is_crew_member or is_owner:
-                    await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
-                    self._save_user_zone(user.id, "!mod")
-                else:
-                    # Ultimate Safe Authorization: Let them pass automatically if the system layout is blocked by the SDK version framework
-                    await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
-                    self._save_user_zone(user.id, "!mod")
-
-            elif command == "!dj":
-                if user.username.lower() == TARGET_DJ_USERNAME.lower() or is_owner:
-                    await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!dj"])
-                else:
-                    await self.highrise.chat(f"@{user.username}, only @{TARGET_DJ_USERNAME} can use !dj.")
-
-            elif command == "!f1":
-                await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!f1"])
-                self._clear_user_zone(user.id)
-                    
-        except Exception as chat_err:
-            print(f"[Chat Error] Problem handling message: {chat_err}", flush=True)
-
 
 
 
