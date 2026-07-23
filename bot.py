@@ -31,7 +31,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # --- HIGHRISE HARDCODED CONFIGURATION ---
 ROOM_ID = "64a094a74134ad0fd77b8734"
 OWNER_USER_ID = "61ccb2a0fa2db3178100252c"
-CREW_ID = "69bf2d0c5654e2325acf9318"  # Your Exact Verified Crew ID
+CREW_ID = "69bf2d0c5654e2325acf9318"  # Your Verified Crew ID
 VIP_TIP_THRESHOLD_GOLD = 500
 TARGET_DJ_USERNAME = "nxmb_"
 OWNER_USERNAME = "sexytegann"
@@ -69,7 +69,7 @@ class TeleportBot(BaseBot):
                 cursor = conn.cursor()
                 cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                return row[0] if row else 0
+                return row if row else 0
         except Exception:
             return 0
 
@@ -98,7 +98,7 @@ class TeleportBot(BaseBot):
                 cursor = conn.cursor()
                 cursor.execute("SELECT zone_command FROM active_zones WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                return row[0] if row else None
+                return row if row else None
         except Exception:
             return None
 
@@ -155,34 +155,34 @@ class TeleportBot(BaseBot):
                 is_crew_member = False
                 
                 if not is_owner:
+                    # 1. TRY LIVE CACHE FIRST
                     try:
-                        # CRITICAL FIX: Pulling user data directly from the active live room mapping
                         room_users = await self.highrise.get_room_users()
                         for target_user, position in room_users.content:
                             if target_user.id == user.id:
-                                # Look for a nested crew profile attribute
                                 crew_obj = getattr(target_user, 'crew', None)
                                 if crew_obj:
                                     extracted_id = getattr(crew_obj, 'id', None) or getattr(crew_obj, 'id_', None) or str(crew_obj)
-                                    print(f"[Live Room Cache Match] User: {user.username} | Crew ID found: {extracted_id}", flush=True)
+                                    print(f"[Live Room Cache Match] User: {user.username} | Crew ID: {extracted_id}", flush=True)
                                     if str(extracted_id).strip() == str(CREW_ID).strip():
                                         is_crew_member = True
                                 break
                     except Exception as cache_err:
-                        print(f"[Cache Error] Room live-list scan dropped: {cache_err}", flush=True)
+                        print(f"[Cache Error] Room listing failed: {cache_err}", flush=True)
 
-                    # EMERGENCY BACKUP PROTOCOL: If cache lookup is empty, check the API endpoint safely
+                    # 2. SDK V24 FIX: USE WEBAPI BACKUP IF ROOM CACHE FAILED
                     if not is_crew_member:
                         try:
-                            user_info = await self.highrise.get_user_info(user.id)
+                            # Using webapi instead of highrise to match SDK version 24.1.0
+                            user_info = await self.webapi.get_user_info(user.id)
                             crew_obj = getattr(user_info, 'crew', None) or getattr(user_info, 'crew_id', None)
                             if crew_obj:
                                 extracted_id = getattr(crew_obj, 'id', None) or getattr(crew_obj, 'id_', None) or str(crew_obj)
-                                print(f"[Web API Backup Match] User: {user.username} | Crew ID found: {extracted_id}", flush=True)
+                                print(f"[Web API Backup Match] User: {user.username} | Crew ID: {extracted_id}", flush=True)
                                 if str(extracted_id).strip() == str(CREW_ID).strip():
                                     is_crew_member = True
                         except Exception as api_err:
-                            print(f"[Web API Error] Profile lookup dropped: {api_err}", flush=True)
+                            print(f"[Web API Error] Profile lookup failed: {api_err}", flush=True)
 
                 if is_crew_member or is_owner:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
