@@ -23,7 +23,7 @@ class KeepAliveServer(http.server.SimpleHTTPRequestHandler):
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     server = http.server.HTTPServer(("0.0.0.0", port), KeepAliveServer)
-    print(f"[Web Server] Keeping bot awake on port {port}")
+    print(f"[Web Server] Keeping bot awake on port {port}", flush=True)
     server.serve_forever()
 
 threading.Thread(target=run_web_server, daemon=True).start()
@@ -31,7 +31,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # --- HIGHRISE HARDCODED CONFIGURATION ---
 ROOM_ID = "64a094a74134ad0fd77b8734"
 OWNER_USER_ID = "61ccb2a0fa2db3178100252c"
-CREW_ID = "69bf2d0c5654e2325acf9318"  # Your Exact Crew ID
+CREW_ID = "69bf2d0c5654e2325acf9318"  # Your Exact Verified Crew ID
 VIP_TIP_THRESHOLD_GOLD = 500
 TARGET_DJ_USERNAME = "nxmb_"
 OWNER_USERNAME = "sexytegann"
@@ -103,22 +103,22 @@ class TeleportBot(BaseBot):
             return None
 
     async def on_start(self, session_metadata) -> None:
-        print(f"[TeleportBot] Connected to Highrise room {ROOM_ID}")
+        print(f"[TeleportBot] Connected to Highrise room {ROOM_ID}", flush=True)
         asyncio.create_task(self._announcement_loop())
 
     async def _announcement_loop(self) -> None:
         while True:
             await asyncio.sleep(300)
             try:
-                print("[Timer] Sending automated room announcement...")
+                print("[Timer] Sending automated room announcement...", flush=True)
                 await self.highrise.chat(ANNOUNCEMENT_MESSAGE)
             except Exception as announce_err:
-                print(f"[Timer Error] Could not send message: {announce_err}")
+                print(f"[Timer Error] Could not send message: {announce_err}", flush=True)
 
     async def on_user_join(self, user: User, position: Position | AnchorPosition) -> None:
         saved_zone = self._get_user_zone(user.id)
         if saved_zone in TELEPORT_DESTINATIONS:
-            print(f"[Auto-Teleport] Returning {user.username} back to {saved_zone}")
+            print(f"[Auto-Teleport] Returning {user.username} back to {saved_zone}", flush=True)
             await self._delayed_teleport(user, TELEPORT_DESTINATIONS[saved_zone])
             return
 
@@ -129,14 +129,14 @@ class TeleportBot(BaseBot):
         try:
             await self.highrise.chat(ANNOUNCEMENT_MESSAGE)
         except Exception as exc:
-            print(f"[TeleportBot] Failed welcome message: {exc}")
+            print(f"[TeleportBot] Failed welcome message: {exc}", flush=True)
 
     async def _delayed_teleport(self, user: User, position: Position, delay: float = 2.5) -> None:
         await asyncio.sleep(delay)
         try:
             await self.highrise.teleport(user.id, position)
         except Exception as exc:
-            print(f"[TeleportBot] Teleport failed for {user.username}: {exc}")
+            print(f"[TeleportBot] Teleport failed for {user.username}: {exc}", flush=True)
 
     async def on_chat(self, user: User, message: str) -> None:
         try:
@@ -156,27 +156,33 @@ class TeleportBot(BaseBot):
                 
                 if not is_owner:
                     try:
-                        # Call Highrise Web API profile endpoint directly
-                        user_info = await self.highrise.get_user_info(user.id)
-                        
-                        # Check if user has a crew profile entry attached
-                        if hasattr(user_info, 'crew') and user_info.crew is not None:
-                            # Safely extract the inner string ID from the Highrise Crew data object
-                            extracted_id = getattr(user_info.crew, 'id', None) or getattr(user_info.crew, 'id_', None) or str(user_info.crew)
-                            
-                            # Diagnostic verification for your Railway Live Log streams
-                            print(f"[Crew Verification] Processing {user.username} | Checking ID: {extracted_id}")
-                            
-                            if str(extracted_id).strip() == str(CREW_ID).strip():
-                                is_crew_member = True
-                        
-                        # Fallback backup parameter checks if SDK formats it flatly as a dictionary or different property names
-                        elif hasattr(user_info, 'crew_id') and user_info.crew_id is not None:
-                            if str(user_info.crew_id).strip() == str(CREW_ID).strip():
-                                is_crew_member = True
-                                
-                    except Exception as crew_err:
-                        print(f"[Crew System Error] Profile check failed for {user.username}: {crew_err}")
+                        # CRITICAL FIX: Pulling user data directly from the active live room mapping
+                        room_users = await self.highrise.get_room_users()
+                        for target_user, position in room_users.content:
+                            if target_user.id == user.id:
+                                # Look for a nested crew profile attribute
+                                crew_obj = getattr(target_user, 'crew', None)
+                                if crew_obj:
+                                    extracted_id = getattr(crew_obj, 'id', None) or getattr(crew_obj, 'id_', None) or str(crew_obj)
+                                    print(f"[Live Room Cache Match] User: {user.username} | Crew ID found: {extracted_id}", flush=True)
+                                    if str(extracted_id).strip() == str(CREW_ID).strip():
+                                        is_crew_member = True
+                                break
+                    except Exception as cache_err:
+                        print(f"[Cache Error] Room live-list scan dropped: {cache_err}", flush=True)
+
+                    # EMERGENCY BACKUP PROTOCOL: If cache lookup is empty, check the API endpoint safely
+                    if not is_crew_member:
+                        try:
+                            user_info = await self.highrise.get_user_info(user.id)
+                            crew_obj = getattr(user_info, 'crew', None) or getattr(user_info, 'crew_id', None)
+                            if crew_obj:
+                                extracted_id = getattr(crew_obj, 'id', None) or getattr(crew_obj, 'id_', None) or str(crew_obj)
+                                print(f"[Web API Backup Match] User: {user.username} | Crew ID found: {extracted_id}", flush=True)
+                                if str(extracted_id).strip() == str(CREW_ID).strip():
+                                    is_crew_member = True
+                        except Exception as api_err:
+                            print(f"[Web API Error] Profile lookup dropped: {api_err}", flush=True)
 
                 if is_crew_member or is_owner:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
@@ -195,7 +201,7 @@ class TeleportBot(BaseBot):
                 self._clear_user_zone(user.id)
                     
         except Exception as chat_err:
-            print(f"[Chat Error] Problem handling message: {chat_err}")
+            print(f"[Chat Error] Problem handling message: {chat_err}", flush=True)
 
 
 
