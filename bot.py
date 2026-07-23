@@ -31,7 +31,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # --- HIGHRISE HARDCODED CONFIGURATION ---
 ROOM_ID = "64a094a74134ad0fd77b8734"
 OWNER_USER_ID = "61ccb2a0fa2db3178100252c"
-CREW_ID = "69bf2d0c5654e2325acf9318"  # Base Crew ID matching parameter
+CREW_ID = "69bf2d0c5654e2325acf9318"  # Your Verified Crew ID
 VIP_TIP_THRESHOLD_GOLD = 500
 TARGET_DJ_USERNAME = "nxmb_"
 OWNER_USERNAME = "sexytegann"
@@ -69,7 +69,7 @@ class TeleportBot(BaseBot):
                 cursor = conn.cursor()
                 cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                return row[0] if row else 0
+                return row if row else 0
         except Exception:
             return 0
 
@@ -98,7 +98,7 @@ class TeleportBot(BaseBot):
                 cursor = conn.cursor()
                 cursor.execute("SELECT zone_command FROM active_zones WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                return row[0] if row else None
+                return row if row else None
         except Exception:
             return None
 
@@ -154,15 +154,24 @@ class TeleportBot(BaseBot):
             elif command == "!mod":
                 is_crew_member = False
                 
-                # Fetch complete profile data including crew details from Highrise API
                 if not is_owner:
                     try:
                         user_info = await self.highrise.get_user_info(user.id)
-                        # Check either user_info.crew or user_info.crew_id depending on SDK variant
-                        user_crew = getattr(user_info, 'crew', None) or getattr(user_info, 'crew_id', None)
                         
-                        if user_crew and str(user_crew) == str(CREW_ID):
-                            is_crew_member = True
+                        # Grab the crew attribute structure safely
+                        crew_attr = getattr(user_info, 'crew', None) or getattr(user_info, 'crew_id', None)
+                        
+                        # High-utility logging to verify what the SDK provides in your Railway terminal
+                        print(f"[Crew Debug] User: {user.username} | Raw Attribute Type: {type(crew_attr)} | Value: {crew_attr}")
+                        
+                        if crew_attr:
+                            # Safely extract internal properties if it is an object, or treat it as a direct string
+                            extracted_id = getattr(crew_attr, 'id', None) or getattr(crew_attr, 'id_', None) or crew_attr
+                            print(f"[Crew Debug] Extracted ID for match: {extracted_id}")
+                            
+                            if str(extracted_id).strip() == str(CREW_ID).strip():
+                                is_crew_member = True
+                                
                     except Exception as crew_err:
                         print(f"[Crew Check Error] Failed to get user info: {crew_err}")
 
@@ -184,6 +193,7 @@ class TeleportBot(BaseBot):
                     
         except Exception as chat_err:
             print(f"[Chat Error] Problem handling message: {chat_err}")
+
 
 
 
