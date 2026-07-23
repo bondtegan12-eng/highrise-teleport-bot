@@ -69,7 +69,7 @@ class TeleportBot(BaseBot):
                 cursor = conn.cursor()
                 cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                return row if row else 0
+                return row[0] if row else 0
         except Exception:
             return 0
 
@@ -98,7 +98,7 @@ class TeleportBot(BaseBot):
                 cursor = conn.cursor()
                 cursor.execute("SELECT zone_command FROM active_zones WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                return row if row else None
+                return row[0] if row else None
         except Exception:
             return None
 
@@ -154,21 +154,17 @@ class TeleportBot(BaseBot):
             elif command == "!mod":
                 is_crew_member = False
                 
-                # STRING FORMATTING FIX: Forces text-string evaluation for the raw parameters
-                if hasattr(user, 'crew_id') and str(getattr(user, 'crew_id')) == str(CREW_ID):
-                    is_crew_member = True
-
-                if not is_crew_member and not is_owner:
+                # Fetch complete profile data including crew details from Highrise API
+                if not is_owner:
                     try:
-                        room_data = await self.highrise.get_room_users()
-                        for room_user, pos in room_data.content:
-                            if room_user.id == user.id:
-                                # Apply the explicit string formatting parameter wrapper here too
-                                if hasattr(room_user, 'crew_id') and str(getattr(room_user, 'crew_id')) == str(CREW_ID):
-                                    is_crew_member = True
-                                break
-                    except Exception as scan_err:
-                        print(f"[Scan Error] Failed room cache scan: {scan_err}")
+                        user_info = await self.highrise.get_user_info(user.id)
+                        # Check either user_info.crew or user_info.crew_id depending on SDK variant
+                        user_crew = getattr(user_info, 'crew', None) or getattr(user_info, 'crew_id', None)
+                        
+                        if user_crew and str(user_crew) == str(CREW_ID):
+                            is_crew_member = True
+                    except Exception as crew_err:
+                        print(f"[Crew Check Error] Failed to get user info: {crew_err}")
 
                 if is_crew_member or is_owner:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
@@ -187,37 +183,8 @@ class TeleportBot(BaseBot):
                 self._clear_user_zone(user.id)
                     
         except Exception as chat_err:
-            print(f"[Chat Handling Log] Caught entry: {chat_err}")
+            print(f"[Chat Error] Problem handling message: {chat_err}")
 
-    async def on_tip(self, sender: User, receiver: User, tip: CurrencyItem) -> None:
-        if receiver.id == self.highrise.my_id and isinstance(tip, CurrencyItem):
-            new_total = self._add_tip(sender.id, tip.amount)
-            if new_total >= VIP_TIP_THRESHOLD_GOLD:
-                await self.highrise.chat(f"🎉 @{sender.username} has unlocked permanent VIP access by reaching {new_total}g tipped!")
-
-# --- PERSISTENT LOOP RUNNER WITH FORCED CRASH FIX ---
-def start_bot_loop():
-    from highrise.__main__ import BotDefinition, main as run_bots
-    
-    definitions = [
-        BotDefinition(
-            bot_class_path="bot:TeleportBot",
-            room_id=ROOM_ID,
-            api_token="2c001cb06c4370e639be2d7a24cf4e7a0a8600ef708d45d11cde0960653d0e8a6"
-        )
-    ]
-    
-    while True:
-        try:
-            print("[System] Launching bot connection framework...")
-            asyncio.run(run_bots(definitions))
-        except Exception as loop_err:
-            print(f"[Connection Dropped] Room went empty: {loop_err}")
-    
-    sys.exit(1)
-
-if __name__ == "__main__":
-    start_bot_loop()
 
 
 
