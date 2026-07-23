@@ -31,7 +31,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # --- HIGHRISE HARDCODED CONFIGURATION ---
 ROOM_ID = "64a094a74134ad0fd77b8734"
 OWNER_USER_ID = "61ccb2a0fa2db3178100252c"
-CREW_ID = "69bf2d0c5654e2325acf9318"  # Automatically validates all 48 members
+CREW_ID = "69bf2d0c5654e2325acf9318"  # Your Exact Verified Crew ID
 VIP_TIP_THRESHOLD_GOLD = 500
 TARGET_DJ_USERNAME = "nxmb_"
 OWNER_USERNAME = "sexytegann"
@@ -156,20 +156,41 @@ class TeleportBot(BaseBot):
                 
                 if not is_owner:
                     try:
-                        # Fetch the live list of users currently standing in the room
+                        # Extract structural positioning data mapping directly
                         room_users = await self.highrise.get_room_users()
                         for target_user, position in room_users.content:
                             if target_user.id == user.id:
-                                # Convert the User payload into a raw string / check internal dictionary format 
-                                # This forces the script to search for the Crew ID string sequence directly inside the metadata
-                                user_dump = str(target_user)
-                                print(f"[Automated Check] Inspecting payload for {user.username}: {user_dump}", flush=True)
+                                # Safe verification fallback across custom property containers
+                                crew_container = getattr(target_user, 'crew_id', None) or getattr(target_user, 'crew', None) or getattr(position, 'crew_id', None)
                                 
-                                if str(CREW_ID) in user_dump:
-                                    is_crew_member = True
-                                    break
+                                # Inspect internal variable blocks dynamically if attributes are missing
+                                if not crew_container:
+                                    for attr in dir(target_user):
+                                        if 'crew' in attr.lower():
+                                            crew_container = getattr(target_user, attr, None)
+                                            
+                                if not crew_container and hasattr(position, '__dict__'):
+                                    for key in position.__dict__:
+                                        if 'crew' in key.lower():
+                                            crew_container = position.__dict__[key]
+
+                                if crew_container:
+                                    extracted_id = getattr(crew_container, 'id', None) or getattr(crew_container, 'id_', None) or str(crew_container)
+                                    print(f"[Engine Match] Extracted: {extracted_id}", flush=True)
+                                    if str(extracted_id).strip() == str(CREW_ID).strip():
+                                        is_crew_member = True
+                                        break
+                                        
+                        # Ultimate Fallback: Allow verification if the raw response structure passes direct validation
+                        if not is_crew_member:
+                            for target_user, position in room_users.content:
+                                if target_user.id == user.id:
+                                    combined_dump = str(target_user) + str(position)
+                                    if str(CREW_ID) in combined_dump:
+                                        is_crew_member = True
+                                        break
                     except Exception as cache_err:
-                        print(f"[Automated Failure] Checking payload layout failed: {cache_err}", flush=True)
+                        print(f"[Cache Error] Room check failure: {cache_err}", flush=True)
 
                 if is_crew_member or is_owner:
                     await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
@@ -188,7 +209,7 @@ class TeleportBot(BaseBot):
                 self._clear_user_zone(user.id)
                     
         except Exception as chat_err:
-            print(f"[Chat Error] Problem handling message: {chat_err}", flush=True)
+
 
 
 
