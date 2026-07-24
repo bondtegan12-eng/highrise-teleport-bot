@@ -45,7 +45,7 @@ ANNOUNCEMENT_MESSAGE = "WELCOME TO BAMBS BDAY BASH JOIN THE PARTY -- tip me 500g
 TELEPORT_DESTINATIONS: dict[str, Position] = {
     "!vip": Position(x=17, y=9, z=18, facing="FrontRight"),
     "!mod": Position(x=6, y=9, z=29, facing="FrontRight"),
-    "!dj": Position(x=16, y=0, z=24, facing="FrontRight"),
+    "!dj": Position(x=14, y=9, z=29, facing="FrontRight"),  # FIXED: 8 blocks right of !mod
     "!f1": Position(x=10, y=0, z=10, facing="FrontRight"),
 }
 
@@ -72,7 +72,7 @@ class TeleportBot(BaseBot):
                 cursor = conn.cursor()
                 cursor.execute("SELECT gold_amount FROM tips WHERE user_id = ?", (user_id,))
                 row = cursor.fetchone()
-                return row[0] if row else 0
+                return row if row else 0
         except Exception:
             return 0
 
@@ -137,13 +137,13 @@ class TeleportBot(BaseBot):
         command = clean_message.lower()
         is_owner = user.id == OWNER_USER_ID or user.username.lower() == OWNER_USERNAME.lower()
 
-        # 1. ADMIN COMMAND (Fixed String Array Extraction Error)
+        # 1. ADMIN COMMAND
         if command.startswith("!givevip "):
             if is_owner:
                 try:
                     parts = clean_message.split(" ")
                     if len(parts) > 1:
-                        target_username = parts[1].replace("@", "").strip().lower()
+                        target_username = parts.replace("@", "").strip().lower()
                         room_users = await self.highrise.get_room_users()
                         found_user = False
                         for target_user, position in room_users.content:
