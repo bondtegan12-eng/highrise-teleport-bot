@@ -63,7 +63,6 @@ class TeleportBot(BaseBot):
     def _init_db(self) -> None:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            # Only keep the tips table active. Wiped out the buggy zone tables entirely.
             cursor.execute("CREATE TABLE IF NOT EXISTS tips (user_id TEXT PRIMARY KEY, gold_amount INTEGER DEFAULT 0)")
             conn.commit()
 
@@ -109,7 +108,6 @@ class TeleportBot(BaseBot):
         except Exception as exc:
             print(f"[TeleportBot] Failed welcome message: {exc}", flush=True)
 
-        # Clean automated join-teleport matching logic
         total_tipped = self._get_tip_total(user.id)
         if total_tipped >= VIP_TIP_THRESHOLD_GOLD:
             await self._delayed_teleport(user, TELEPORT_DESTINATIONS["!vip"])
@@ -139,24 +137,29 @@ class TeleportBot(BaseBot):
         command = clean_message.lower()
         is_owner = user.id == OWNER_USER_ID or user.username.lower() == OWNER_USERNAME.lower()
 
-        # 1. ADMIN COMMAND (Completely independent)
+        # 1. ADMIN COMMAND (Fixed String Array Extraction Error)
         if command.startswith("!givevip "):
             if is_owner:
-                target_username = clean_message.split(" ").replace("@", "").strip().lower()
-                room_users = await self.highrise.get_room_users()
-                found_user = False
-                for target_user, position in room_users.content:
-                    if target_user.username.lower() == target_username:
-                        self._force_set_vip(target_user.id)
-                        await self.highrise.chat(f"💎 Manually added @{target_user.username} to VIP. They can use !vip permanently now!")
-                        await self.highrise.teleport(target_user.id, TELEPORT_DESTINATIONS["!vip"])
-                        found_user = True
-                        break
-                if not found_user:
-                    await self.highrise.chat(f"Error: @{target_username} must be standing in the room to use this.")
+                try:
+                    parts = clean_message.split(" ")
+                    if len(parts) > 1:
+                        target_username = parts[1].replace("@", "").strip().lower()
+                        room_users = await self.highrise.get_room_users()
+                        found_user = False
+                        for target_user, position in room_users.content:
+                            if target_user.username.lower() == target_username:
+                                self._force_set_vip(target_user.id)
+                                await self.highrise.chat(f"💎 Manually added @{target_user.username} to VIP. They can use !vip permanently now!")
+                                await self.highrise.teleport(target_user.id, TELEPORT_DESTINATIONS["!vip"])
+                                found_user = True
+                                break
+                        if not found_user:
+                            await self.highrise.chat(f"Error: @{target_username} must be standing in the room to use this.")
+                except Exception as admin_err:
+                    print(f"[Admin Command Error] {admin_err}", flush=True)
             return
 
-        # 2. MOVEMENT COMMAND TRACKS (Completely independent clean 'if' blocks)
+        # 2. MOVEMENT COMMAND TRACKS
         if command == "!f1":
             await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!f1"])
             return
@@ -171,7 +174,6 @@ class TeleportBot(BaseBot):
 
         if command == "!mod":
             is_crew_member = False
-            # If the user has a VIP database record, we grant them access to !mod immediately 
             total_tipped = self._get_tip_total(user.id)
             if total_tipped >= VIP_TIP_THRESHOLD_GOLD:
                 is_crew_member = True
@@ -194,7 +196,6 @@ class TeleportBot(BaseBot):
             if is_crew_member or is_owner:
                 await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
             else:
-                # Absolute safety fallback for your crew members
                 await self.highrise.teleport(user.id, TELEPORT_DESTINATIONS["!mod"])
             return
 
@@ -204,7 +205,6 @@ class TeleportBot(BaseBot):
             else:
                 await self.highrise.chat(f"@{user.username}, only @{TARGET_DJ_USERNAME} can use !dj.")
             return
-
 
 
 
